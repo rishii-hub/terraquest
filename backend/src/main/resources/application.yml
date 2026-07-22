@@ -1,0 +1,79 @@
+spring:
+  application:
+    name: terraquest
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/terraquest}
+    username: ${DB_USER:terraquest}
+    password: ${DB_PASSWORD:local_dev_only}
+    hikari:
+      # Harvester runs on a scheduled thread and holds a connection for the
+      # duration of a batch. Sized to leave headroom for request traffic.
+      maximum-pool-size: 20
+      minimum-idle: 5
+
+  jpa:
+    hibernate:
+      # Flyway owns the schema. Hibernate must never touch DDL -- a stray
+      # ddl-auto=update against production would silently rewrite tables.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc.time_zone: UTC
+        # Batch the harvester's inserts; it writes in bursts of dozens.
+        jdbc.batch_size: 50
+        order_inserts: true
+    open-in-view: false   # lazy loading in controllers hides N+1 queries
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+    validate-on-migrate: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  threads:
+    virtual:
+      enabled: true   # Java 21; harvester and asset ingest are IO-bound
+
+server:
+  port: 8080
+  error:
+    include-message: never      # do not leak internals in error bodies
+    include-stacktrace: never
+
+terraquest:
+  harvest:
+    # Conservative default. Raise once real rate-limit headroom is measured;
+    # a too-aggressive harvester gets the API token throttled, and coverage
+    # data is worth more than harvest speed.
+    interval-ms: 60000
+    enabled: ${HARVEST_ENABLED:false}
+
+  r2:
+    bucket: ${R2_BUCKET:terraquest-imagery}
+    account-id: ${R2_ACCOUNT_ID:}
+    access-key-id: ${R2_ACCESS_KEY_ID:}
+    secret-access-key: ${R2_SECRET_ACCESS_KEY:}
+
+mapillary:
+  access-token: ${MAPILLARY_ACCESS_TOKEN:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    dev.terraquest: INFO
+    # Uncomment when tuning the sampler or debugging a slow query.
+    # org.hibernate.SQL: DEBUG
