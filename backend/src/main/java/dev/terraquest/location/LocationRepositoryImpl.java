@@ -130,4 +130,13 @@ class LocationRepositoryImpl implements LocationRepository {
                 .setParameter("id", locationId)
                 .executeUpdate();
     }
+
+    @Override
+    @Transactional
+    public void recordIngestFailure(UUID locationId) {
+        em.createNativeQuery(
+                        "UPDATE location SET ingest_attempts = ingest_attempts + 1 WHERE id = :id")
+                .setParameter("id", locationId)
+                .executeUpdate();
+    }
 }
