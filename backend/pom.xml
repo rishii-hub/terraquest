@@ -20,6 +20,9 @@
     <properties>
         <java.version>21</java.version>
         <archunit.version>1.3.0</archunit.version>
+        <!-- Must match the version Spring Boot's BOM manages for flyway-core,
+             or the plugin and the runtime disagree about migration checksums. -->
+        <flyway.version>10.20.1</flyway.version>
         <awssdk.version>2.29.34</awssdk.version>
     </properties>
 
@@ -107,9 +110,7 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
-        <!-- ------------------------------------------------------------ -->
-        <!-- Test                                                          -->
-        <!-- ------------------------------------------------------------ -->
+        <!-- Test scope -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -150,13 +151,44 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+
+            <!--
+                Required for `mvn flyway:migrate` in CI. flyway-core is a
+                runtime dependency and does NOT provide the Maven goal, and
+                org.flywaydb is not one of Maven's default plugin groups, so
+                without this declaration the goal fails to resolve before it
+                ever reaches a database.
+
+                CI runs this against a clean PostGIS container on every push.
+                That is the only check that catches a migration which is valid
+                SQL on its own but conflicts with an earlier one, a failure
+                mode no unit test can reach.
+            -->
+            <plugin>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-maven-plugin</artifactId>
+                <version>${flyway.version}</version>
+                <configuration>
+                    <url>${env.DB_URL}</url>
+                    <user>${env.DB_USER}</user>
+                    <password>${env.DB_PASSWORD}</password>
+                    <locations>
+                        <location>filesystem:src/main/resources/db/migration</location>
+                    </locations>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.flywaydb</groupId>
+                        <artifactId>flyway-database-postgresql</artifactId>
+                        <version>${flyway.version}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
                     <compilerArgs>
-                        <!-- Record and lambda-heavy code benefits; also keeps
-                             constructor parameter names for Jackson binding. -->
                         <arg>-parameters</arg>
                         <arg>-Xlint:all</arg>
                     </compilerArgs>
