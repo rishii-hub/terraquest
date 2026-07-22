@@ -1,9 +1,6 @@
 package dev.terraquest.game;
 
-import dev.terraquest.imagery.Projection;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.DecimalMax;
-import jakarta.validation.constraints.DecimalMin;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -54,58 +51,7 @@ public class GameController {
         return gameService.submitGuess(gameId, user.id(), index, body.lat(), body.lon());
     }
 
-    // ---------------------------------------------------------------
-    // DTOs
-    // ---------------------------------------------------------------
-
-    public record GameCreated(UUID gameId, int roundCount) {}
-
-    /**
-     * Note the omissions: no coordinates, no country, no Mapillary identifier,
-     * no contributor name. {@code initialHeading} is the compass bearing the
-     * viewer should face on load -- it reveals orientation, not position.
-     */
-    public record RoundView(
-            UUID roundId,
-            int index,
-            String imageUrl,
-            Projection projection,
-            int width,
-            int height,
-            Float initialHeading,
-            Integer timeLimitSeconds
-    ) {}
-
-    /**
-     * Client-supplied duration is intentionally absent. Elapsed time is computed
-     * server-side from the round's issuance timestamp; accepting it from the
-     * client would make every timed mode forgeable.
-     */
-    public record GuessRequest(
-            @DecimalMin("-90.0") @DecimalMax("90.0") double lat,
-            @DecimalMin("-180.0") @DecimalMax("180.0") double lon
-    ) {}
-
-    public record GuessResult(
-            int score,
-            double distanceMetres,
-            double actualLat,
-            double actualLon,
-            String countryCode,
-            Attribution attribution,
-            int runningTotal,
-            boolean gameComplete
-    ) {}
-
-    /**
-     * CC-BY-SA credit. Rendered on the result screen -- deferred rather than
-     * omitted, because a contributor's upload history frequently gives away the
-     * country before the player has guessed.
-     */
-    public record Attribution(
-            String contributor,
-            String profileUrl,
-            String licence,
-            String sourceUrl
-    ) {}
+    // DTOs (GameCreated, RoundView, GuessRequest, GuessResult) and the shared
+    // Attribution value type are top-level in this package / the shared kernel,
+    // so both this controller and GameService reference the same types.
 }

@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Thin client over the Mapillary Graph API.
@@ -37,14 +38,16 @@ public class MapillaryClient {
     }
 
     /**
-     * Probe a single point for street-level imagery within a window of
-     * {@code MAX_BBOX_DEGREES}, centred on (lat, lon).
+     * Search a bounding box for street-level imagery. The SPI adapter keeps the
+     * box under {@code MAX_BBOX_DEGREES} square; the API rejects anything at or
+     * above 0.01 degrees.
      *
      * @param limit max images to return; keep small, we only need a handful per point
      */
-    public List<MapillaryImage> probe(double lat, double lon, int limit) {
-        double half = MAX_BBOX_DEGREES / 2.0;
-        String bbox = "%f,%f,%f,%f".formatted(lon - half, lat - half, lon + half, lat + half);
+    public List<MapillaryImage> searchBbox(double minLat, double minLon,
+                                           double maxLat, double maxLon, int limit) {
+        // Mapillary expects bbox as west,south,east,north.
+        String bbox = "%f,%f,%f,%f".formatted(minLon, minLat, maxLon, maxLat);
 
         JsonNode body = client.get()
                 .uri(uri -> uri.path("/images")
@@ -70,6 +73,28 @@ public class MapillaryClient {
             }
         }
         return out;
+    }
+
+    /**
+     * Resolve a single field for one image (e.g. a sized thumbnail URL). Returns
+     * empty if the image or field is absent rather than throwing, so a missing
+     * URL degrades to skipping that image rather than failing the batch.
+     */
+    public Optional<String> fetchField(String imageId, String field) {
+        JsonNode body = client.get()
+                .uri(uri -> uri.path("/" + imageId)
+                        .queryParam("access_token", accessToken)
+                        .queryParam("fields", field)
+                        .build())
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(15))
+                .block();
+
+        if (body == null || !body.has(field) || body.get(field).isNull()) {
+            return Optional.empty();
+        }
+        return Optional.of(body.get(field).asText());
     }
 
     private MapillaryImage parse(JsonNode n) {

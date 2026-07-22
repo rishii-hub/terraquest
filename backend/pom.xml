@@ -194,6 +194,26 @@
                     </compilerArgs>
                 </configuration>
             </plugin>
+
+            <!--
+                Bind Failsafe so `mvn verify` actually runs the *IT suite.
+                LocationRepositoryIT needs a real PostGIS via Testcontainers; it
+                skips itself when Docker is unavailable (so a Docker-less box
+                stays green) and runs for real in CI, which is the check that
+                catches a migration or entity-mapping regression.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>
