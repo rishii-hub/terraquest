@@ -1,0 +1,32 @@
+# Build
+target/
+build/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Secrets. MAPILLARY_ACCESS_TOKEN and R2 credentials live here in dev.
+.env
+.env.*
+!.env.example
+application-local.yml
+
+# Harvest artefacts: GeoNames dumps and spike output are large and
+# regenerable. Nothing here belongs in git history.
+data/geonames/
+data/naturalearth/
+*.tsv
+spike_results*.json
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
