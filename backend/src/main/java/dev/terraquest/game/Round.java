@@ -11,6 +11,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.locationtech.jts.geom.Point;
 
 import java.time.Instant;
@@ -51,6 +53,7 @@ public class Round {
     @Column(name = "guess", columnDefinition = "geography(Point,4326)")
     private Point guess;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "guess_country", length = 2)
     private String guessCountry;
 

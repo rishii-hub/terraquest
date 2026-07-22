@@ -4,6 +4,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.locationtech.jts.geom.Point;
 
 /**
@@ -16,9 +18,11 @@ import org.locationtech.jts.geom.Point;
 public class Country {
 
     @Id
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "iso2", length = 2, nullable = false, updatable = false)
     private String iso2;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "iso3", length = 3, nullable = false)
     private String iso3;
 

@@ -8,6 +8,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.locationtech.jts.geom.Point;
 
 import java.time.Instant;
@@ -29,6 +31,7 @@ public class CandidatePoint {
     @Column(name = "position", nullable = false, columnDefinition = "geography(Point,4326)")
     private Point position;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "country_code", length = 2)
     private String countryCode;
 

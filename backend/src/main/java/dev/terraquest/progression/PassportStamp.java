@@ -5,6 +5,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.io.Serializable;
 import java.time.Instant;
@@ -29,6 +31,7 @@ public class PassportStamp {
     private UUID userId;
 
     @Id
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "country_code", length = 2, nullable = false, updatable = false)
     private String countryCode;
 
