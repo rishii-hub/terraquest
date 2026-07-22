@@ -165,7 +165,7 @@ def run(samples: int, seeds: str | None, token: str, delay: float) -> SpikeResul
             images = probe(lat, lon, token, session)
         except Exception as exc:
             results.errors += 1
-            print(f"  [{i}/{len(points)}] error: {exc}", file=sys.stderr)
+            print(f"  [{i}/{len(points)}] error: {type(exc).__name__}", file=sys.stderr)
             continue
         finally:
             results.points_probed += 1
