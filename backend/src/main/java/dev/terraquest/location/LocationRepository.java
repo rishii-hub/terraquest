@@ -42,4 +42,12 @@ public interface LocationRepository {
 
     /** Flip a location playable once its imagery is cached and cleaned. */
     void markAssetReady(UUID locationId);
+
+    /**
+     * Record that an asset ingest attempt failed for this location. The location
+     * row remains with {@code asset_ready = false}, invisible to the sampler; the
+     * counter separates a genuine ingest failure from a location not yet attempted
+     * for the harvest-stats endpoint.
+     */
+    void recordIngestFailure(UUID locationId);
 }

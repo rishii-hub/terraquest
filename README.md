@@ -49,10 +49,11 @@ Ordered so each phase produces something you can actually play.
 ### Phase 1 — Location pipeline *(in progress)*
 - [x] Schema: countries, candidate points, locations, games, rounds
 - [x] Mapillary client respecting the bbox ceiling
-- [x] Harvester job with quality filtering
+- [x] Harvester job with quality filtering, transient-failure retry
 - [x] Scoring (haversine + exponential decay)
-- [ ] GeoNames seed importer
-- [ ] Country reverse-geocode from Natural Earth polygons
+- [x] GeoNames seed importer (idempotent, streaming)
+- [x] Country reverse-geocode from Natural Earth polygons (PostGIS `ST_Covers`)
+- [x] Admin harvest-stats endpoint
 - [ ] Target: 20k locations across 60+ countries
 
 ### Phase 2 — Classic Mode, single player
@@ -100,6 +101,50 @@ docker compose up -d postgres redis
 export MAPILLARY_ACCESS_TOKEN=<token from mapillary.com/developer>
 ./mvnw spring-boot:run
 ```
+
+## Seeding the pool
+
+The candidate grid and country boundaries are loaded from external open datasets
+via a one-off CLI runner — never on boot. Download the data first (neither file
+is committed to git):
+
+```bash
+# GeoNames cities (CC BY 4.0) — tab-separated; columns 4/5 are lat/lon.
+curl -O https://download.geonames.org/export/dump/cities15000.zip
+unzip cities15000.zip            # -> cities15000.txt
+
+# Natural Earth Admin 0 countries (public domain). Convert the shapefile to
+# GeoJSON once (requires GDAL's ogr2ogr), so the loader can stream it:
+#   ogr2ogr -f GeoJSON ne_admin0.geojson ne_110m_admin_0_countries.shp
+```
+
+Then load boundaries first (this also seeds the `country` reference table the
+harvester's foreign key needs), then the candidate points. Both runners are
+idempotent, so re-running is safe:
+
+```bash
+java -jar target/terraquest-backend-*.jar --terraquest.import.boundaries=./ne_admin0.geojson
+java -jar target/terraquest-backend-*.jar --terraquest.import.geonames=./cities15000.txt
+```
+
+Candidate points are stored without a country; each location's country is
+resolved from the boundary polygons at harvest time (`ST_Covers` on the image's
+own coordinates), so a point that falls in no polygon is excluded from play
+rather than mislabelled.
+
+## Monitoring the pool
+
+`GET /api/v1/admin/harvest-stats` (HTTP Basic, `ADMIN_USERNAME` / `ADMIN_PASSWORD`)
+returns pool size by country split panoramic vs flat, candidate-queue state
+(probed / unprobed / retry-exhausted) and ingest state (ingested / awaiting /
+failed). It is the input for tuning the sampler once real numbers exist.
+
+## Data attribution
+
+- **GeoNames** city data — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+  © GeoNames (<https://www.geonames.org>).
+- **Natural Earth** Admin 0 country boundaries — public domain
+  (<https://www.naturalearthdata.com>).
 
 ## Licence
 

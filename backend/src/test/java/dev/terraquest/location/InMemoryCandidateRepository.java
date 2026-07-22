@@ -12,16 +12,26 @@ class InMemoryCandidateRepository implements CandidatePointRepository {
 
     final List<CandidatePoint> saved = new ArrayList<>();
 
+    private static final int MAX_CONSECUTIVE_FAILURES = 3;
+
     @Override
     public List<CandidatePoint> findUnprobed(int limit) {
         return saved.stream()
                 .filter(c -> !c.isProbed())
+                .filter(c -> !c.hasExhaustedRetries(MAX_CONSECUTIVE_FAILURES))
                 .limit(limit)
                 .toList();
     }
 
     @Override
     public void saveAll(List<CandidatePoint> points) {
-        saved.addAll(points);
+        // Idempotent by identity, mirroring persist-or-merge: re-saving a point
+        // already tracked (the harvester saves the batch it drained) updates it
+        // in place rather than duplicating the row.
+        for (CandidatePoint point : points) {
+            if (!saved.contains(point)) {
+                saved.add(point);
+            }
+        }
     }
 }

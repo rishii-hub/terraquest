@@ -16,8 +16,14 @@ import java.time.Instant;
 
 /**
  * A seed point the harvester probes for imagery. Maps the {@code candidate_point}
- * table (V1). Probed exactly once, then stamped so the queue converges instead
- * of retrying dead regions forever.
+ * table (V1 + V3).
+ *
+ * <p>Probing is not one-shot: transient provider errors (measured at 5.4% in the
+ * coverage spike) must not permanently discard a point. A successful probe --
+ * even one that finds no imagery -- stamps {@link #probedAt} and the point leaves
+ * the queue. A failed probe increments {@link #failureCount} instead, and the
+ * point is retried until it succeeds or exhausts {@code MAX_CONSECUTIVE_FAILURES}
+ * attempts, after which it drops out of the unprobed queue for good.
  */
 @Entity
 @Table(name = "candidate_point")
@@ -44,6 +50,9 @@ public class CandidatePoint {
     @Column(name = "hit_count", nullable = false)
     private int hitCount;
 
+    @Column(name = "failure_count", nullable = false)
+    private int failureCount;
+
     protected CandidatePoint() {
         // for JPA
     }
@@ -53,6 +62,7 @@ public class CandidatePoint {
         this.countryCode = countryCode;
         this.source = source;
         this.hitCount = 0;
+        this.failureCount = 0;
     }
 
     /**
@@ -63,9 +73,30 @@ public class CandidatePoint {
         return new CandidatePoint(Geo.toPoint(position), countryCode, source);
     }
 
-    /** Stamp this point probed. Idempotent enough: the queue filters on null. */
-    public void markProbed(Instant when) {
+    /**
+     * Record a successful probe: stamp it probed and remember how many locations
+     * it yielded. The point leaves the unprobed queue (which filters on a null
+     * {@code probed_at}). A hit count of zero is a real result -- "probed, no
+     * imagery here" -- distinct from a point that never probed successfully.
+     */
+    public void recordSuccess(Instant when, int hitCount) {
         this.probedAt = when;
+        this.hitCount = hitCount;
+    }
+
+    /**
+     * Record a transient probe failure. Leaves {@code probed_at} null so the
+     * point is retried, but increments the failure counter; once it reaches
+     * {@code MAX_CONSECUTIVE_FAILURES} the point drops out of the queue via the
+     * partial index rather than being retried against a dead region forever.
+     */
+    public void recordFailure() {
+        this.failureCount++;
+    }
+
+    /** True once repeated transient failures have used up this point's retries. */
+    public boolean hasExhaustedRetries(int maxFailures) {
+        return failureCount >= maxFailures;
     }
 
     public Long getId() {
@@ -94,5 +125,9 @@ public class CandidatePoint {
 
     public int getHitCount() {
         return hitCount;
+    }
+
+    public int getFailureCount() {
+        return failureCount;
     }
 }

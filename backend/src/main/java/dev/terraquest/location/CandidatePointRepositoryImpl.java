@@ -15,12 +15,21 @@ class CandidatePointRepositoryImpl implements CandidatePointRepository {
     @PersistenceContext
     private EntityManager em;
 
+    // Mirrors the literal in idx_candidate_unprobed's partial predicate and
+    // LocationHarvester.MAX_CONSECUTIVE_FAILURES; a point that has used up its
+    // retries is not "unprobed" and must not be handed back.
+    private static final int MAX_CONSECUTIVE_FAILURES = 3;
+
     @Override
     public List<CandidatePoint> findUnprobed(int limit) {
-        // Matches idx_candidate_unprobed (partial index WHERE probed_at IS NULL).
+        // Matches idx_candidate_unprobed
+        // (partial index WHERE probed_at IS NULL AND failure_count < 3).
         return em.createQuery(
-                        "select c from CandidatePoint c where c.probedAt is null order by c.id",
+                        "select c from CandidatePoint c"
+                                + " where c.probedAt is null and c.failureCount < :maxFailures"
+                                + " order by c.id",
                         CandidatePoint.class)
+                .setParameter("maxFailures", MAX_CONSECUTIVE_FAILURES)
                 .setMaxResults(limit)
                 .getResultList();
     }

@@ -21,6 +21,7 @@ class InMemoryLocationRepository implements LocationRepository {
 
     final Map<String, Location> byExternalId = new HashMap<>();
     final Set<UUID> assetReady = new HashSet<>();
+    final Map<UUID, Integer> ingestFailures = new HashMap<>();
 
     @Override
     public Map<String, Integer> countActiveByCountry(float minQuality) {
@@ -42,5 +43,10 @@ class InMemoryLocationRepository implements LocationRepository {
     @Override
     public void markAssetReady(UUID locationId) {
         assetReady.add(locationId);
+    }
+
+    @Override
+    public void recordIngestFailure(UUID locationId) {
+        ingestFailures.merge(locationId, 1, Integer::sum);
     }
 }

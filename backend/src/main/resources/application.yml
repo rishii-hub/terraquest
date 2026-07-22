@@ -60,6 +60,12 @@ terraquest:
     access-key-id: ${R2_ACCESS_KEY_ID:}
     secret-access-key: ${R2_SECRET_ACCESS_KEY:}
 
+  # Single credential guarding /api/v1/admin/**. Leave the password blank and the
+  # admin user cannot authenticate -- there is deliberately no default password.
+  admin:
+    username: ${ADMIN_USERNAME:admin}
+    password: ${ADMIN_PASSWORD:}
+
 mapillary:
   access-token: ${MAPILLARY_ACCESS_TOKEN:}
 

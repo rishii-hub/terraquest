@@ -103,11 +103,14 @@ class LocationHarvesterTest {
         };
 
         var harvester = harvesterWith(broken, healthy);
-        int kept = harvester.harvestPoint(candidateAt(BERLIN));
+        LocationHarvester.PointOutcome outcome = harvester.harvestPoint(candidateAt(BERLIN));
 
-        assertThat(kept)
+        assertThat(outcome.kept())
                 .as("healthy provider's results must survive a sibling's failure")
                 .isEqualTo(1);
+        assertThat(outcome.probeSucceeded())
+                .as("one provider responding is a definitive probe, not a failure")
+                .isTrue();
     }
 
     @Test
@@ -117,22 +120,144 @@ class LocationHarvesterTest {
                 .toList();
 
         var harvester = harvesterWith(new StubProvider(flood));
-        int kept = harvester.harvestPoint(candidateAt(BERLIN));
+        LocationHarvester.PointOutcome outcome = harvester.harvestPoint(candidateAt(BERLIN));
 
-        assertThat(kept)
+        assertThat(outcome.kept())
                 .as("one well-mapped intersection must not flood the pool")
                 .isEqualTo(3);
+    }
+
+    // ---------------------------------------------------------------
+    // Capture-date validity floor
+    // ---------------------------------------------------------------
+
+    @Test
+    void epoch_zero_capture_date_is_rejected_as_corrupt_metadata() {
+        var harvester = harvesterWith(new StubProvider(List.of()));
+        // 1970-01-01 is epoch zero: broken EXIF, not an old photo.
+        assertThat(harvester.isPlayable(pano(Instant.parse("1970-01-01T00:00:00Z"))))
+                .as("epoch-zero timestamps are corrupt, rejected deliberately")
+                .isFalse();
+    }
+
+    @Test
+    void capture_date_before_mapillary_existed_is_rejected() {
+        var harvester = harvesterWith(new StubProvider(List.of()));
+        // Mapillary did not exist before 2008; a 1989 date is broken metadata.
+        assertThat(harvester.isPlayable(pano(Instant.parse("1989-06-01T00:00:00Z")))).isFalse();
+    }
+
+    // ---------------------------------------------------------------
+    // Country resolution at the image point
+    // ---------------------------------------------------------------
+
+    @Test
+    void a_point_resolving_to_no_country_is_not_persisted() {
+        var harvester = new LocationHarvester(
+                List.of(new StubProvider(List.of(pano(NOW.minus(10, ChronoUnit.DAYS))))),
+                new InMemoryCandidateRepository(),
+                new InMemoryLocationRepository(),
+                new InMemoryCountryResolver(null), // offshore / disputed
+                new RecordingAssetService(),
+                FIXED);
+
+        LocationHarvester.PointOutcome outcome = harvester.harvestPoint(candidateAt(BERLIN));
+
+        assertThat(outcome.kept())
+                .as("an unresolvable point is excluded from play, not guessed")
+                .isZero();
+        assertThat(outcome.probeSucceeded())
+                .as("skipping on an unresolved country is not a probe failure")
+                .isTrue();
+    }
+
+    // ---------------------------------------------------------------
+    // Retry on transient failure (the data-loss bug this PR fixes)
+    // ---------------------------------------------------------------
+
+    @Test
+    void a_transient_probe_failure_retries_instead_of_discarding_the_point() {
+        var candidates = new InMemoryCandidateRepository();
+        candidates.saveAll(List.of(candidateAt(BERLIN)));
+        var harvester = batchHarvester(candidates, alwaysFailing());
+
+        harvester.harvestBatch();
+
+        CandidatePoint point = candidates.saved.get(0);
+        assertThat(point.isProbed())
+                .as("a server hiccup must not stamp the point probed")
+                .isFalse();
+        assertThat(point.getFailureCount()).isEqualTo(1);
+        assertThat(candidates.findUnprobed(10))
+                .as("still retriable after one failure")
+                .hasSize(1);
+    }
+
+    @Test
+    void a_point_drops_out_of_the_queue_after_exhausting_its_retries() {
+        var candidates = new InMemoryCandidateRepository();
+        candidates.saveAll(List.of(candidateAt(BERLIN)));
+        var harvester = batchHarvester(candidates, alwaysFailing());
+
+        for (int i = 0; i < 3; i++) {
+            harvester.harvestBatch();
+        }
+
+        CandidatePoint point = candidates.saved.get(0);
+        assertThat(point.getFailureCount()).isEqualTo(3);
+        assertThat(point.isProbed()).isFalse();
+        assertThat(candidates.findUnprobed(10))
+                .as("three consecutive failures retire the point for good")
+                .isEmpty();
+    }
+
+    @Test
+    void a_successful_probe_with_no_imagery_still_retires_the_point() {
+        var candidates = new InMemoryCandidateRepository();
+        candidates.saveAll(List.of(candidateAt(BERLIN)));
+        var harvester = batchHarvester(candidates, new StubProvider(List.of()));
+
+        harvester.harvestBatch();
+
+        CandidatePoint point = candidates.saved.get(0);
+        assertThat(point.isProbed())
+                .as("'probed, nothing here' is a real result that retires the point")
+                .isTrue();
+        assertThat(point.getFailureCount()).isZero();
+        assertThat(candidates.findUnprobed(10)).isEmpty();
     }
 
     // ---------------------------------------------------------------
     // Fixtures
     // ---------------------------------------------------------------
 
+    private LocationHarvester batchHarvester(InMemoryCandidateRepository candidates,
+                                             ImageryProvider provider) {
+        return new LocationHarvester(
+                List.of(provider),
+                candidates,
+                new InMemoryLocationRepository(),
+                new InMemoryCountryResolver("DE"),
+                new RecordingAssetService(),
+                FIXED);
+    }
+
+    /** A provider whose every probe throws, simulating a transient outage. */
+    private static ImageryProvider alwaysFailing() {
+        return new StubProvider(List.of()) {
+            @Override
+            public List<SourceImage> findNear(GeoPoint centre, double radiusMetres, int limit) {
+                throw new RuntimeException("simulated transient failure");
+            }
+        };
+    }
+
     private LocationHarvester harvesterWith(ImageryProvider... providers) {
         return new LocationHarvester(
                 List.of(providers),
                 new InMemoryCandidateRepository(),
                 new InMemoryLocationRepository(),
+                new InMemoryCountryResolver("DE"),
                 new RecordingAssetService(),
                 FIXED);
     }

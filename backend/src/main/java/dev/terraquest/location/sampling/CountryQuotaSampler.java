@@ -32,8 +32,14 @@ public class CountryQuotaSampler implements LocationSamplingStrategy {
 
     private static final double FLATTENING_EXPONENT = 0.35;
 
-    /** Below this, a country's locations repeat often enough to be memorised. */
-    private static final int MIN_LOCATIONS_PER_COUNTRY = 15;
+    /**
+     * Below this, a country's locations repeat often enough to be memorised.
+     *
+     * <p>Public so the harvest-stats endpoint can report how many countries clear
+     * the floor without duplicating the number. This exposes the constant; it
+     * does not change the sampler's behaviour.
+     */
+    public static final int MIN_LOCATIONS_PER_COUNTRY = 15;
 
     private final LocationRepository locations;
 

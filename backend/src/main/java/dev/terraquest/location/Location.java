@@ -85,6 +85,9 @@ public class Location implements AttributionSource {
     @Column(name = "asset_ready", nullable = false)
     private boolean assetReady = false;
 
+    @Column(name = "ingest_attempts", nullable = false)
+    private int ingestAttempts = 0;
+
     // Read-only view for primaryAsset(); the FK is owned by ImageAsset.locationId.
     @OneToMany(fetch = FetchType.LAZY)
     @JoinColumn(name = "location_id", insertable = false, updatable = false)
@@ -188,6 +191,10 @@ public class Location implements AttributionSource {
 
     public boolean isAssetReady() {
         return assetReady;
+    }
+
+    public int getIngestAttempts() {
+        return ingestAttempts;
     }
 
     public static Builder builder() {
