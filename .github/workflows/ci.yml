@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A new push to a PR makes the previous run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Compile
+        working-directory: backend
+        run: mvn -B compile
+
+      # Split from the full suite deliberately. Boundary violations are the
+      # failure mode most likely to creep in during review, and a dedicated
+      # step makes the cause obvious in the checks list instead of buried in
+      # a hundred passing tests.
+      - name: Architecture rules
+        working-directory: backend
+        run: mvn -B test -Dtest=ArchitectureTest
+
+      - name: Unit and integration tests
+        working-directory: backend
+        # Testcontainers spins up PostGIS; the Docker daemon is preinstalled
+        # on ubuntu-latest runners.
+        run: mvn -B verify
+
+      - name: Publish test report
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: 'backend/target/surefire-reports/*.xml'
+
+  migrations:
+    name: Flyway migrations apply cleanly
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: terraquest
+          POSTGRES_USER: terraquest
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U terraquest"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      # Catches the failure mode unit tests cannot: a migration that is valid
+      # SQL but conflicts with an earlier one. Runs against a clean database
+      # every time, which is the only way to know V1 and V2 still compose.
+      - name: Apply migrations from scratch
+        working-directory: backend
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/terraquest
+          DB_USER: terraquest
+          DB_PASSWORD: ci
+        run: mvn -B flyway:migrate -Dflyway.url=$DB_URL -Dflyway.user=$DB_USER -Dflyway.password=$DB_PASSWORD
