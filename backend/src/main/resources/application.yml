@@ -52,6 +52,8 @@ terraquest:
     # a too-aggressive harvester gets the API token throttled, and coverage
     # data is worth more than harvest speed.
     interval-ms: 60000
+    # Off by default: gates the LocationHarvester bean itself, so no batch is
+    # scheduled unless a deployment opts in. Set HARVEST_ENABLED=true to run it.
     enabled: ${HARVEST_ENABLED:false}
 
   r2:

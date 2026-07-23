@@ -7,6 +7,7 @@ import dev.terraquest.imagery.ImageryProvider.SourceImage;
 import dev.terraquest.shared.GeoPoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,8 +39,14 @@ import java.util.*;
  * </pre>
  * A location only becomes playable once its asset is cached and cleaned;
  * {@code asset_ready} is the gate the sampler's partial index enforces.
+ *
+ * <p>Gated by {@code terraquest.harvest.enabled} (default false): with the flag
+ * off this bean is never created, so no batch is scheduled. {@code @EnableScheduling}
+ * alone is not enough -- a deployment that only imports seeds or serves rounds
+ * should not also be probing providers and writing assets unless it opts in.
  */
 @Service
+@ConditionalOnProperty(name = "terraquest.harvest.enabled", havingValue = "true", matchIfMissing = false)
 public class LocationHarvester {
 
     private static final Logger log = LoggerFactory.getLogger(LocationHarvester.class);
