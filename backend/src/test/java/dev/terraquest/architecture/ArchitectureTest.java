@@ -42,6 +42,22 @@ class ArchitectureTest {
                     .because("Mapillary is one adapter behind ImageryProvider; the engine "
                             + "must compile unchanged if it is replaced or joined by others");
 
+    /**
+     * The AWS SDK is one {@code StorageProvider} adapter, no more privileged than
+     * Mapillary is behind {@code ImageryProvider}. Sealing it here is what lets
+     * the asset pipeline compile unchanged if storage ever moves off an
+     * S3-compatible backend -- and keeps the local-filesystem and in-memory
+     * providers honest by making an accidental S3 import a build failure.
+     */
+    @ArchTest
+    static final ArchRule aws_sdk_is_sealed_behind_the_r2_adapter =
+            noClasses()
+                    .that().resideOutsideOfPackage("dev.terraquest.storage.r2..")
+                    .should().dependOnClassesThat()
+                    .resideInAPackage("software.amazon.awssdk..")
+                    .because("R2 is one StorageProvider adapter; the asset pipeline must "
+                            + "compile unchanged if storage is replaced or joined by others");
+
     // ---------------------------------------------------------------
     // Game engine purity
     // ---------------------------------------------------------------

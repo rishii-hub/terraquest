@@ -60,6 +60,13 @@ terraquest:
     access-key-id: ${R2_ACCESS_KEY_ID:}
     secret-access-key: ${R2_SECRET_ACCESS_KEY:}
 
+  # Object storage falls back to the local filesystem whenever the R2 credentials
+  # above are blank, so local dev and harvesting need no cloud account. This is
+  # where the local provider writes; ignored once R2 is configured.
+  storage:
+    local:
+      directory: ${LOCAL_STORAGE_DIR:${java.io.tmpdir}/terraquest-imagery}
+
   # Single credential guarding /api/v1/admin/**. Leave the password blank and the
   # admin user cannot authenticate -- there is deliberately no default password.
   admin:
