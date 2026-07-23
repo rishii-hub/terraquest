@@ -1,14 +1,9 @@
 package dev.terraquest.imagery;
 
+import dev.terraquest.storage.StorageProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -20,8 +15,8 @@ import java.time.Duration;
 import java.util.UUID;
 
 /**
- * Owns the imagery proxy: ingesting Mapillary images into R2 and handing out
- * short-lived signed URLs at play time.
+ * Owns the imagery proxy: ingesting Mapillary images into object storage (via
+ * {@link StorageProvider}) and handing out short-lived signed URLs at play time.
  *
  * <p>Why proxy at all: a Mapillary image ID resolves to exact coordinates via a
  * single public API call. Shipping that ID to the client makes every leaderboard
@@ -50,19 +45,12 @@ public class ImageAssetService {
      */
     private static final int MAX_PANO_WIDTH = 2048;
 
-    private final S3Client s3;
-    private final S3Presigner presigner;
+    private final StorageProvider storage;
     private final ImageAssetRepository assets;
-    private final String bucket;
 
-    public ImageAssetService(S3Client s3,
-                             S3Presigner presigner,
-                             ImageAssetRepository assets,
-                             @Value("${terraquest.r2.bucket}") String bucket) {
-        this.s3 = s3;
-        this.presigner = presigner;
+    public ImageAssetService(StorageProvider storage, ImageAssetRepository assets) {
+        this.storage = storage;
         this.assets = assets;
-        this.bucket = bucket;
     }
 
     /**
@@ -78,14 +66,7 @@ public class ImageAssetService {
 
             String storageKey = "img/" + UUID.randomUUID();
 
-            s3.putObject(
-                    PutObjectRequest.builder()
-                            .bucket(bucket)
-                            .key(storageKey)
-                            .contentType("image/jpeg")
-                            .cacheControl("private, max-age=900")
-                            .build(),
-                    RequestBody.fromBytes(clean));
+            storage.put(storageKey, clean, "image/jpeg");
 
             BufferedImage probe = ImageIO.read(new ByteArrayInputStream(clean));
 
@@ -170,12 +151,6 @@ public class ImageAssetService {
             throw new IllegalStateException("Refusing to serve asset with intact metadata: " + asset.getId());
         }
 
-        return presigner.presignGetObject(
-                        GetObjectPresignRequest.builder()
-                                .signatureDuration(SIGNED_URL_TTL)
-                                .getObjectRequest(b -> b.bucket(bucket).key(asset.getStorageKey()))
-                                .build())
-                .url()
-                .toString();
+        return storage.signedUrl(asset.getStorageKey(), SIGNED_URL_TTL);
     }
 }
