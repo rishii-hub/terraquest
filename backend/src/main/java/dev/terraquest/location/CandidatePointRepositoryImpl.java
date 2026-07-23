@@ -22,16 +22,33 @@ class CandidatePointRepositoryImpl implements CandidatePointRepository {
 
     @Override
     public List<CandidatePoint> findUnprobed(int limit) {
-        // Matches idx_candidate_unprobed
-        // (partial index WHERE probed_at IS NULL AND failure_count < 3).
+        // Predicate matches idx_candidate_unprobed (partial index WHERE probed_at
+        // IS NULL AND failure_count < 3). Ordered at random rather than by id:
+        // the grid is seeded country-by-country, so id order truncates a partial
+        // harvest alphabetically. random() makes any prefix a representative
+        // sample. The partial index still serves the predicate; only the sort of
+        // the (few thousand) matching rows is unindexed, which is negligible at
+        // once-a-minute batch cadence.
         return em.createQuery(
                         "select c from CandidatePoint c"
                                 + " where c.probedAt is null and c.failureCount < :maxFailures"
-                                + " order by c.id",
+                                + " order by function('random')",
                         CandidatePoint.class)
                 .setParameter("maxFailures", MAX_CONSECUTIVE_FAILURES)
                 .setMaxResults(limit)
                 .getResultList();
+    }
+
+    @Override
+    public int resetExhaustedRetries() {
+        // Bulk update, no entity load: this can touch many rows and the caller
+        // is an admin action, not the harvest loop. Scoped to unprobed points so
+        // a genuinely probed candidate is never silently re-queued.
+        return em.createQuery(
+                        "update CandidatePoint c set c.failureCount = 0"
+                                + " where c.probedAt is null and c.failureCount >= :maxFailures")
+                .setParameter("maxFailures", MAX_CONSECUTIVE_FAILURES)
+                .executeUpdate();
     }
 
     @Override

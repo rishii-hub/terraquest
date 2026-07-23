@@ -16,11 +16,27 @@ class InMemoryCandidateRepository implements CandidatePointRepository {
 
     @Override
     public List<CandidatePoint> findUnprobed(int limit) {
+        // Insertion order here on purpose: the production query randomises to stay
+        // globally representative, but the harvester's unit tests want a
+        // deterministic queue. Random sampling is proven against real SQL in
+        // PoolBootstrapIT, not here.
         return saved.stream()
                 .filter(c -> !c.isProbed())
                 .filter(c -> !c.hasExhaustedRetries(MAX_CONSECUTIVE_FAILURES))
                 .limit(limit)
                 .toList();
+    }
+
+    @Override
+    public int resetExhaustedRetries() {
+        int reset = 0;
+        for (CandidatePoint c : saved) {
+            if (!c.isProbed() && c.hasExhaustedRetries(MAX_CONSECUTIVE_FAILURES)) {
+                c.resetFailures();
+                reset++;
+            }
+        }
+        return reset;
     }
 
     @Override

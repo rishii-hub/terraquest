@@ -99,6 +99,17 @@ public class CandidatePoint {
         return failureCount >= maxFailures;
     }
 
+    /**
+     * Clear the failure counter, returning a retry-exhausted point to the queue.
+     * For recovering points killed by a systematic outage (an empty token, a
+     * provider down): a transient failure must not permanently shrink the seed
+     * grid. Deliberately does not touch {@code probed_at} -- a point that was
+     * genuinely probed stays probed.
+     */
+    public void resetFailures() {
+        this.failureCount = 0;
+    }
+
     public Long getId() {
         return id;
     }

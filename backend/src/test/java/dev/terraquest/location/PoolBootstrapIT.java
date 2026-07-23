@@ -3,6 +3,8 @@ package dev.terraquest.location;
 import dev.terraquest.admin.HarvestStats;
 import dev.terraquest.admin.HarvestStatsService;
 import dev.terraquest.admin.HarvestStatsServiceImpl;
+import dev.terraquest.admin.PoolMaintenanceService;
+import dev.terraquest.admin.PoolMaintenanceServiceImpl;
 import dev.terraquest.shared.Geo;
 import dev.terraquest.shared.GeoPoint;
 import org.junit.jupiter.api.Test;
@@ -39,7 +41,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Testcontainers(disabledWithoutDocker = true)
 @Import({LocationRepositoryImpl.class, CandidatePointRepositoryImpl.class,
-        CountryResolverImpl.class, HarvestStatsServiceImpl.class})
+        CountryResolverImpl.class, HarvestStatsServiceImpl.class,
+        PoolMaintenanceServiceImpl.class})
 @TestPropertySource(properties = {
         "spring.jpa.hibernate.ddl-auto=validate",
         "spring.flyway.enabled=true"
@@ -61,6 +64,7 @@ class PoolBootstrapIT {
     @Autowired private CandidatePointRepository candidates;
     @Autowired private LocationRepository locations;
     @Autowired private HarvestStatsService stats;
+    @Autowired private PoolMaintenanceService poolMaintenance;
     @Autowired private TestEntityManager em;
 
     // ---------------------------------------------------------------
@@ -105,6 +109,58 @@ class PoolBootstrapIT {
                 .as("only the fresh and still-retriable points are queued")
                 .hasSize(2);
         assertThat(unprobed).allMatch(c -> !c.isProbed() && !c.hasExhaustedRetries(3));
+    }
+
+    @Test
+    void find_unprobed_samples_across_the_grid_not_in_insertion_order() {
+        // The grid is seeded country-by-country, so ascending id is alphabetical
+        // by country. Insert 60 unprobed points and draw half.
+        for (int i = 0; i < 60; i++) {
+            insertCandidate(52.0 + i * 0.001, 13.0, null, 0);
+        }
+        em.flush();
+
+        List<Long> idsAscending = candidateIdsAscending();
+        List<Long> insertionPrefix = idsAscending.subList(0, 30);
+        List<Long> backHalf = idsAscending.subList(30, 60);
+
+        List<Long> batch = candidates.findUnprobed(30).stream()
+                .map(CandidatePoint::getId)
+                .toList();
+
+        assertThat(batch).hasSize(30);
+        // Insertion-order (the old `order by id`) would return exactly the front
+        // 30 and none of the back half. A random sample reaches both ends -- the
+        // probability it draws zero of the back 30 is ~1 in 1e17.
+        assertThat(batch)
+                .as("a partial harvest must sample the whole grid, not its alphabetical prefix")
+                .isNotEqualTo(insertionPrefix)
+                .containsAnyElementsOf(backHalf);
+    }
+
+    // ---------------------------------------------------------------
+    // Reviving retry-exhausted points
+    // ---------------------------------------------------------------
+
+    @Test
+    void reset_exhausted_requeues_retry_killed_points_but_leaves_probed_ones() {
+        insertCandidate(52.5, 13.4, null, 0);            // fresh, still queued
+        insertCandidate(52.6, 13.5, null, 3);            // retry-exhausted
+        insertCandidate(52.7, 13.6, null, 5);            // retry-exhausted, over the cap
+        insertCandidate(52.8, 13.7, Instant.now(), 3);   // exhausted but genuinely probed
+        em.flush();
+        em.clear();
+
+        int reset = poolMaintenance.resetExhaustedCandidates();
+
+        assertThat(reset)
+                .as("only the two unprobed, retry-exhausted points are reset")
+                .isEqualTo(2);
+
+        em.clear();
+        assertThat(candidates.findUnprobed(10))
+                .as("the two revived points rejoin the fresh one; the probed point stays out")
+                .hasSize(3);
     }
 
     // ---------------------------------------------------------------
@@ -180,6 +236,14 @@ class PoolBootstrapIT {
                 .active(true)
                 .assetReady(assetReady)
                 .build());
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Long> candidateIdsAscending() {
+        List<Number> ids = em.getEntityManager()
+                .createNativeQuery("SELECT id FROM candidate_point ORDER BY id")
+                .getResultList();
+        return ids.stream().map(Number::longValue).toList();
     }
 
     private void insertCandidate(double lat, double lon, Instant probedAt, int failureCount) {
