@@ -2,6 +2,7 @@ package dev.terraquest.imagery.mapillary;
 
 import dev.terraquest.imagery.ImageryProvider;
 import dev.terraquest.shared.GeoPoint;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -19,8 +20,14 @@ import java.util.Optional;
  * are clamped rather than split: the harvester probes many points cheaply, and
  * tiling one oversized query into dozens of sub-requests would burn rate limit
  * for imagery we would discard anyway.
+ *
+ * <p>Wired only when {@code terraquest.harvest.enabled} is true. This provider is
+ * a harvest-time dependency -- it is injected solely into the harvester, and the
+ * round path attributes imagery from the stored {@code Location}, never from here
+ * -- so a round-serving deployment neither creates it nor needs a Mapillary token.
  */
 @Component
+@ConditionalOnProperty(name = "terraquest.harvest.enabled", havingValue = "true", matchIfMissing = false)
 public class MapillaryImageryProvider implements ImageryProvider {
 
     public static final String PROVIDER_ID = "mapillary";

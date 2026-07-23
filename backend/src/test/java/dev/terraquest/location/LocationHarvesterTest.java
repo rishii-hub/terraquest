@@ -2,6 +2,7 @@ package dev.terraquest.location;
 
 import dev.terraquest.imagery.ImageryProvider;
 import dev.terraquest.imagery.ImageryProvider.SourceImage;
+import dev.terraquest.imagery.ProviderException;
 import dev.terraquest.shared.GeoPoint;
 import org.junit.jupiter.api.Test;
 
@@ -212,6 +213,46 @@ class LocationHarvesterTest {
     }
 
     @Test
+    void a_retryable_provider_failure_keeps_the_point_in_the_queue() {
+        var candidates = new InMemoryCandidateRepository();
+        candidates.saveAll(List.of(candidateAt(BERLIN)));
+        // 5xx / 429 / timeout: another attempt may succeed.
+        var harvester = batchHarvester(candidates, failingWith(retryable()));
+
+        harvester.harvestBatch();
+
+        CandidatePoint point = candidates.saved.get(0);
+        assertThat(point.isProbed())
+                .as("a retryable failure must not stamp the point probed")
+                .isFalse();
+        assertThat(point.getFailureCount()).isEqualTo(1);
+        assertThat(candidates.findUnprobed(10))
+                .as("still retriable after a transient failure")
+                .hasSize(1);
+    }
+
+    @Test
+    void a_non_retryable_provider_failure_retires_the_point_without_retrying() {
+        var candidates = new InMemoryCandidateRepository();
+        candidates.saveAll(List.of(candidateAt(BERLIN)));
+        // A 4xx (bad request/token): retrying only repeats the same rejection.
+        var harvester = batchHarvester(candidates, failingWith(permanent()));
+
+        harvester.harvestBatch();
+
+        CandidatePoint point = candidates.saved.get(0);
+        assertThat(point.isProbed())
+                .as("a permanent 4xx is a verdict: mark it probed and move on")
+                .isTrue();
+        assertThat(point.getFailureCount())
+                .as("a non-retryable failure must not burn a retry")
+                .isZero();
+        assertThat(candidates.findUnprobed(10))
+                .as("a malformed request is not worth probing again")
+                .isEmpty();
+    }
+
+    @Test
     void a_successful_probe_with_no_imagery_still_retires_the_point() {
         var candidates = new InMemoryCandidateRepository();
         candidates.saveAll(List.of(candidateAt(BERLIN)));
@@ -244,12 +285,27 @@ class LocationHarvesterTest {
 
     /** A provider whose every probe throws, simulating a transient outage. */
     private static ImageryProvider alwaysFailing() {
+        return failingWith(new RuntimeException("simulated transient failure"));
+    }
+
+    /** A provider whose every probe throws the given exception. */
+    private static ImageryProvider failingWith(RuntimeException failure) {
         return new StubProvider(List.of()) {
             @Override
             public List<SourceImage> findNear(GeoPoint centre, double radiusMetres, int limit) {
-                throw new RuntimeException("simulated transient failure");
+                throw failure;
             }
         };
+    }
+
+    /** What the adapter throws for a 5xx / 429 / timeout. */
+    private static ProviderException retryable() {
+        return new ProviderException("simulated 503", true, null);
+    }
+
+    /** What the adapter throws for a 4xx other than 429. */
+    private static ProviderException permanent() {
+        return new ProviderException("simulated 400", false, null);
     }
 
     private LocationHarvester harvesterWith(ImageryProvider... providers) {
