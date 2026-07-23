@@ -130,9 +130,81 @@ class SeedImportIT {
                 """)).isEqualTo(1);
     }
 
+    @Test
+    void de_facto_iso_fields_resolve_sovereigns_without_dependencies_clobbering_them(@TempDir Path dir)
+            throws IOException {
+        // Property shapes copied verbatim from ne_10m_admin_0_countries.geojson.
+        // Two things the real data exposes and this asserts:
+        //   1. France / Norway have ISO_A2 = ISO_A3 = "-99" (real code only in
+        //      *_EH); Taiwan has ISO_A2 = "CN-TW" (5 chars). All must resolve.
+        //   2. Clipperton (Dependency) and Brazilian I. (Indeterminate) carry the
+        //      PARENT's code in ISO_A2_EH (FR, BR). Listed AFTER France/Brazil, a
+        //      naive fallback would let them overwrite those countries' boundaries
+        //      via ON CONFLICT DO UPDATE. They must be skipped, not honoured.
+        Path file = dir.resolve("ne_admin0.geojson");
+        Files.writeString(file, """
+                {"type":"FeatureCollection","features":[
+                  {"type":"Feature",
+                   "properties":{"TYPE":"Sovereign country","ISO_A2":"BR","ISO_A3":"BRA","NAME":"Brazil","CONTINENT":"South America"},
+                   "geometry":{"type":"Polygon","coordinates":[[[-50,-15],[-49,-15],[-49,-14],[-50,-14],[-50,-15]]]}},
+                  {"type":"Feature",
+                   "properties":{"TYPE":"Country","ISO_A2":"-99","ISO_A2_EH":"FR","ISO_A3":"-99","ISO_A3_EH":"FRA","NAME":"France","CONTINENT":"Europe"},
+                   "geometry":{"type":"Polygon","coordinates":[[[2,48],[3,48],[3,49],[2,49],[2,48]]]}},
+                  {"type":"Feature",
+                   "properties":{"TYPE":"Sovereign country","ISO_A2":"-99","ISO_A2_EH":"NO","ISO_A3":"-99","ISO_A3_EH":"NOR","NAME":"Norway","CONTINENT":"Europe"},
+                   "geometry":{"type":"Polygon","coordinates":[[[10,60],[11,60],[11,61],[10,61],[10,60]]]}},
+                  {"type":"Feature",
+                   "properties":{"TYPE":"Sovereign country","ISO_A2":"CN-TW","ISO_A2_EH":"TW","ISO_A3":"TWN","ISO_A3_EH":"TWN","NAME":"Taiwan","CONTINENT":"Asia"},
+                   "geometry":{"type":"Polygon","coordinates":[[[120,23],[121,23],[121,24],[120,24],[120,23]]]}},
+                  {"type":"Feature",
+                   "properties":{"TYPE":"Dependency","ISO_A2":"-99","ISO_A2_EH":"FR","ISO_A3":"-99","ISO_A3_EH":"FRA","NAME":"Clipperton I.","CONTINENT":"Seven seas (open ocean)"},
+                   "geometry":{"type":"Polygon","coordinates":[[[-110,10],[-109,10],[-109,11],[-110,11],[-110,10]]]}},
+                  {"type":"Feature",
+                   "properties":{"TYPE":"Indeterminate","ISO_A2":"-99","ISO_A2_EH":"BR","ISO_A3":"-99","ISO_A3_EH":"BRA","NAME":"Brazilian I.","CONTINENT":"South America"},
+                   "geometry":{"type":"Polygon","coordinates":[[[-28,-20],[-27,-20],[-27,-19],[-28,-19],[-28,-20]]]}},
+                  {"type":"Feature",
+                   "properties":{"TYPE":"Indeterminate","ISO_A2":"-99","ISO_A2_EH":"-99","ISO_A3":"-99","ISO_A3_EH":"-99","NAME":"Bir Tawil","CONTINENT":"Africa"},
+                   "geometry":{"type":"Polygon","coordinates":[[[33,21],[34,21],[34,22],[33,22],[33,21]]]}}
+                ]}
+                """, StandardCharsets.UTF_8);
+
+        NaturalEarthLoader.LoadSummary summary = loader.loadFrom(file);
+
+        assertThat(summary.loaded())
+                .as("Brazil, France, Norway, Taiwan resolve; the three sub-national features do not")
+                .isEqualTo(4);
+        assertThat(summary.skipped())
+                .as("Clipperton, Brazilian I. and code-less Bir Tawil are skipped")
+                .isEqualTo(3);
+
+        // The France/Norway recovery (the important half of the fix).
+        assertThat(iso3Of("FR")).isEqualTo("FRA");
+        assertThat(iso3Of("NO")).isEqualTo("NOR");
+        assertThat(iso3Of("TW")).isEqualTo("TWN");
+
+        // The dependency-clobber guard: FR is France, not the Pacific atoll that
+        // borrows its code; BR is Brazil, not "Brazilian I.".
+        assertThat(nameOf("FR")).isEqualTo("France");
+        assertThat(nameOf("BR")).isEqualTo("Brazil");
+        assertThat(count("SELECT count(*) FROM country WHERE name IN ('Clipperton I.','Brazilian I.')"))
+                .as("no sub-national feature ever becomes a country row")
+                .isZero();
+        assertThat(count("SELECT count(*) FROM country WHERE iso2 IN ('-99','CN')"))
+                .as("no sentinel or truncated code is ever stored")
+                .isZero();
+    }
+
     // ---------------------------------------------------------------
     // Fixtures
     // ---------------------------------------------------------------
+
+    private String iso3Of(String iso2) {
+        return jdbc.queryForObject("SELECT iso3 FROM country WHERE iso2 = ?", String.class, iso2).trim();
+    }
+
+    private String nameOf(String iso2) {
+        return jdbc.queryForObject("SELECT name FROM country WHERE iso2 = ?", String.class, iso2);
+    }
 
     private static String geoNamesRow(String id, String name, double lat, double lon, String cc) {
         // GeoNames layout: id, name, asciiname, alternatenames, lat, lon,
