@@ -4,6 +4,7 @@ import dev.terraquest.imagery.ImageAssetService;
 import dev.terraquest.imagery.ImageryProvider;
 import dev.terraquest.imagery.ImageryProvider.ImageSize;
 import dev.terraquest.imagery.ImageryProvider.SourceImage;
+import dev.terraquest.imagery.ProviderException;
 import dev.terraquest.shared.GeoPoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -140,8 +141,10 @@ public class LocationHarvester {
      */
     PointOutcome harvestPoint(CandidatePoint point) {
         ProbeResult probe = probeAllProviders(point.position());
-        if (!probe.anyProviderResponded()) {
-            // Every attempted provider threw: no result at all, retry later.
+        if (!probe.reachedVerdict()) {
+            // Nothing definitive happened, only transient failures: retry later.
+            // A permanent rejection (4xx) is a verdict, not a transient failure,
+            // and falls through to retire the point with zero imagery.
             return new PointOutcome(0, false);
         }
 
@@ -171,10 +174,19 @@ public class LocationHarvester {
      * batch. Duplicates are impossible across providers (external IDs are
      * provider-scoped) but we dedupe within each provider's response anyway,
      * since at least one backend returns the same frame twice at bbox edges.
+     *
+     * <p>Failures are classified, not lumped together. A {@link ProviderException}
+     * carries whether a retry could help: a permanent rejection (a 4xx the
+     * adapter deemed non-retryable) is a definitive answer for this point -- the
+     * request was malformed, retrying wastes rate limit -- whereas a retryable
+     * failure (5xx, timeout, 429) leaves the point in the queue. Any other
+     * exception is unmodelled, so we err toward retrying rather than silently
+     * discarding a seed.
      */
     private ProbeResult probeAllProviders(GeoPoint position) {
         Map<String, SourceImage> byKey = new LinkedHashMap<>();
         boolean anyResponded = false;
+        boolean anyRetryableFailure = false;
         for (ImageryProvider provider : providers) {
             try {
                 for (SourceImage img : provider.findNear(position, PROBE_RADIUS_M, PROBE_LIMIT)) {
@@ -183,19 +195,42 @@ public class LocationHarvester {
                 // Returning without throwing -- even an empty list -- is a
                 // definitive answer for this point from this provider.
                 anyResponded = true;
+            } catch (ProviderException e) {
+                if (e.isRetryable()) {
+                    anyRetryableFailure = true;
+                    log.warn("Provider '{}' failed transiently at {}: {}",
+                            provider.id(), position, e.getMessage());
+                } else {
+                    // Permanent rejection: a definitive "no" for this provider.
+                    // Do not retry -- it would repeat the same malformed request.
+                    log.warn("Provider '{}' permanently rejected the probe at {}: {}",
+                            provider.id(), position, e.getMessage());
+                }
             } catch (Exception e) {
+                // Unmodelled failure: treat as transient so a bug or a new error
+                // mode never silently discards a seed point.
+                anyRetryableFailure = true;
                 log.warn("Provider '{}' failed at {}: {}", provider.id(), position, e.getMessage());
             }
         }
-        return new ProbeResult(List.copyOf(byKey.values()), anyResponded);
+        return new ProbeResult(List.copyOf(byKey.values()), anyResponded, anyRetryableFailure);
     }
 
     /**
-     * Pooled imagery plus whether the probe reached a verdict. {@code
-     * anyProviderResponded} is false only when every attempted provider threw --
-     * the transient-failure case that must not stamp the candidate probed.
+     * Pooled imagery plus how the probe ended. The point is retried only when the
+     * probe {@link #reachedVerdict() did not reach a verdict} -- i.e. the only
+     * thing that happened was a retryable failure. A provider responding (even
+     * empty) or permanently rejecting the request is a verdict that retires the
+     * point.
      */
-    private record ProbeResult(List<SourceImage> images, boolean anyProviderResponded) {}
+    private record ProbeResult(List<SourceImage> images,
+                               boolean anyResponded,
+                               boolean anyRetryableFailure) {
+
+        boolean reachedVerdict() {
+            return anyResponded || !anyRetryableFailure;
+        }
+    }
 
     /**
      * Filters imagery that makes for a bad round. Deliberately conservative: a
