@@ -4,13 +4,17 @@ import dev.terraquest.imagery.ImageAsset;
 import dev.terraquest.imagery.ImageAssetService;
 import dev.terraquest.location.Location;
 import dev.terraquest.location.LocationSampler;
+import dev.terraquest.location.NoLocationsAvailableException;
 import dev.terraquest.scoring.ScoringService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Orchestrates a single-player game.
@@ -115,7 +119,31 @@ public class GameService {
     }
 
     private Round createRound(Game game, int roundIndex) {
-        Location location = sampler.sampleForGame(game.getId(), roundIndex);
+        // Rounds are created lazily in order, so every existing round for this
+        // game precedes this one. Excluding their locations keeps a game from
+        // ever repeating a place; excluding their countries spreads the game
+        // across the map until the pool forces a repeat (see LocationSampler).
+        List<Round> prior = rounds.findByGameId(game.getId());
+        Set<UUID> excludeLocations = prior.stream()
+                .map(r -> r.getLocation().getId())
+                .collect(Collectors.toSet());
+        Set<String> excludeCountries = prior.stream()
+                .map(r -> r.getLocation().getCountryCode())
+                .collect(Collectors.toSet());
+
+        // Classic Mode serves only panoramas; every other mode keeps the full
+        // pool. The mode -> filter decision lives here, not buried in a query.
+        boolean panoramasOnly = game.getMode() == GameMode.CLASSIC;
+
+        Location location;
+        try {
+            location = sampler.sampleForGame(
+                    game.getId(), roundIndex, panoramasOnly, excludeLocations, excludeCountries);
+        } catch (NoLocationsAvailableException e) {
+            // Translate the pool-seam failure into a mapped HTTP status so an
+            // exhausted pool reads as a clean 503, not a 500 + stack trace.
+            throw new PoolExhaustedException(e);
+        }
         ImageAsset asset = location.primaryAsset();
 
         Round round = Round.builder()

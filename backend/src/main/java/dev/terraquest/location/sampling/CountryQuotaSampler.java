@@ -58,7 +58,8 @@ public class CountryQuotaSampler implements LocationSamplingStrategy {
         // challenges and multiplayer rooms reproduce the same set on any node.
         Random rng = new Random(request.seed());
 
-        Map<String, Integer> poolByCountry = locations.countActiveByCountry(request.minQuality());
+        Map<String, Integer> poolByCountry =
+                locations.countActiveByCountry(request.minQuality(), request.panoramasOnly());
 
         List<String> eligible = poolByCountry.entrySet().stream()
                 .filter(e -> e.getValue() >= MIN_LOCATIONS_PER_COUNTRY)
@@ -75,7 +76,8 @@ public class CountryQuotaSampler implements LocationSamplingStrategy {
 
         String country = weightedPick(eligible, poolByCountry, rng);
         return locations.sampleWithinCountry(
-                country, request.minQuality(), request.excludeLocations(), rng.nextLong());
+                country, request.minQuality(), request.excludeLocations(),
+                request.panoramasOnly(), rng.nextLong());
     }
 
     /**

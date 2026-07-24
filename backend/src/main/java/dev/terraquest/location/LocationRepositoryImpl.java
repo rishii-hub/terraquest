@@ -27,13 +27,13 @@ class LocationRepositoryImpl implements LocationRepository {
 
     @Override
     @SuppressWarnings("unchecked")
-    public Map<String, Integer> countActiveByCountry(float minQuality) {
-        List<Object[]> rows = em.createNativeQuery("""
-                        SELECT country_code, count(*)::int AS n
-                        FROM location
-                        WHERE is_active AND asset_ready AND quality_score >= :minQuality
-                        GROUP BY country_code
-                        """)
+    public Map<String, Integer> countActiveByCountry(float minQuality, boolean panoramasOnly) {
+        List<Object[]> rows = em.createNativeQuery(
+                        "SELECT country_code, count(*)::int AS n"
+                                + " FROM location"
+                                + " WHERE is_active AND asset_ready AND quality_score >= :minQuality"
+                                + (panoramasOnly ? " AND is_panoramic" : "")
+                                + " GROUP BY country_code")
                 .setParameter("minQuality", minQuality)
                 .getResultList();
 
@@ -46,7 +46,8 @@ class LocationRepositoryImpl implements LocationRepository {
 
     @Override
     @SuppressWarnings("unchecked")
-    public Optional<Location> sampleWithinCountry(String country, float minQuality, Set<UUID> exclude, long seed) {
+    public Optional<Location> sampleWithinCountry(String country, float minQuality, Set<UUID> exclude,
+                                                  boolean panoramasOnly, long seed) {
         boolean hasExclusions = exclude != null && !exclude.isEmpty();
 
         // Deterministic ordering: hash the row id against the seed. Same seed ->
@@ -56,6 +57,7 @@ class LocationRepositoryImpl implements LocationRepository {
                 + " WHERE country_code = :country"
                 + "   AND is_active AND asset_ready"
                 + "   AND quality_score >= :minQuality"
+                + (panoramasOnly ? " AND is_panoramic" : "")
                 + (hasExclusions ? " AND id NOT IN (:exclude)" : "")
                 + " ORDER BY md5(id::text || CAST(:seed AS text))"
                 + " LIMIT 1";

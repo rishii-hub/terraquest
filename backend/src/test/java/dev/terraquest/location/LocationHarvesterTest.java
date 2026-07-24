@@ -66,6 +66,41 @@ class LocationHarvesterTest {
     }
 
     // ---------------------------------------------------------------
+    // Panoramas-only harvest mode
+    // ---------------------------------------------------------------
+
+    @Test
+    void panoramas_only_mode_rejects_flat_images_at_the_filter() {
+        SourceImage orientedFlat = flat(NOW.minus(30, ChronoUnit.DAYS), 90f);
+
+        assertThat(harvesterWith(new StubProvider(List.of())).isPlayable(orientedFlat))
+                .as("a compass-oriented flat image is normally playable")
+                .isTrue();
+        assertThat(panoramasOnlyHarvesterWith(new StubProvider(List.of())).isPlayable(orientedFlat))
+                .as("panoramas-only mode discards even a well-oriented flat image")
+                .isFalse();
+    }
+
+    @Test
+    void panoramas_only_mode_never_resolves_a_url_for_flat_images() {
+        // A probe that returns one pano and one perfectly playable flat image.
+        var provider = new RecordingProvider(List.of(
+                pano("p-1", NOW.minus(5, ChronoUnit.DAYS)),
+                flat(NOW.minus(5, ChronoUnit.DAYS), 90f)));
+
+        LocationHarvester.PointOutcome outcome =
+                panoramasOnlyHarvesterWith(provider).harvestPoint(candidateAt(BERLIN));
+
+        assertThat(outcome.kept())
+                .as("only the panorama is kept")
+                .isEqualTo(1);
+        assertThat(provider.resolved)
+                .as("the flat image is dropped before resolveImageUrl -- nothing "
+                        + "flat is resolved, downloaded, stripped or stored")
+                .containsExactly("p-1");
+    }
+
+    // ---------------------------------------------------------------
     // Quality scoring
     // ---------------------------------------------------------------
 
@@ -160,7 +195,8 @@ class LocationHarvesterTest {
                 new InMemoryLocationRepository(),
                 new InMemoryCountryResolver(null), // offshore / disputed
                 new RecordingAssetService(),
-                FIXED);
+                FIXED,
+                false);
 
         LocationHarvester.PointOutcome outcome = harvester.harvestPoint(candidateAt(BERLIN));
 
@@ -280,7 +316,8 @@ class LocationHarvesterTest {
                 new InMemoryLocationRepository(),
                 new InMemoryCountryResolver("DE"),
                 new RecordingAssetService(),
-                FIXED);
+                FIXED,
+                false);
     }
 
     /** A provider whose every probe throws, simulating a transient outage. */
@@ -315,7 +352,19 @@ class LocationHarvesterTest {
                 new InMemoryLocationRepository(),
                 new InMemoryCountryResolver("DE"),
                 new RecordingAssetService(),
-                FIXED);
+                FIXED,
+                false);
+    }
+
+    private LocationHarvester panoramasOnlyHarvesterWith(ImageryProvider... providers) {
+        return new LocationHarvester(
+                List.of(providers),
+                new InMemoryCandidateRepository(),
+                new InMemoryLocationRepository(),
+                new InMemoryCountryResolver("DE"),
+                new RecordingAssetService(),
+                FIXED,
+                true);
     }
 
     private static SourceImage pano(Instant captured) {
@@ -362,6 +411,21 @@ class LocationHarvesterTest {
         @Override
         public Attribution attributionFor(SourceImage image) {
             return new Attribution("tester", null, "CC0-1.0", null, null);
+        }
+    }
+
+    /** Stub that records which external ids reached {@code resolveImageUrl}. */
+    private static final class RecordingProvider extends StubProvider {
+        final List<String> resolved = new java.util.ArrayList<>();
+
+        RecordingProvider(List<SourceImage> images) {
+            super(images);
+        }
+
+        @Override
+        public Optional<String> resolveImageUrl(String externalId, ImageSize size) {
+            resolved.add(externalId);
+            return super.resolveImageUrl(externalId, size);
         }
     }
 }

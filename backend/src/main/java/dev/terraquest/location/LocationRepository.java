@@ -21,17 +21,25 @@ public interface LocationRepository {
     /**
      * Count of playable locations per country code, filtered by quality. Only
      * active, asset-ready rows count -- those are the ones a round can serve.
+     *
+     * <p>When {@code panoramasOnly} is true, only panoramic (equirectangular)
+     * rows count. This must be threaded together with {@link #sampleWithinCountry}
+     * so the per-country counts and the in-country draw agree -- otherwise the
+     * {@code MIN_LOCATIONS_PER_COUNTRY} eligibility gate is computed against a pool
+     * the draw does not match.
      */
-    Map<String, Integer> countActiveByCountry(float minQuality);
+    Map<String, Integer> countActiveByCountry(float minQuality, boolean panoramasOnly);
 
     /**
      * Draw one location from a country, deterministically.
      *
      * <p>Deterministic given the seed so daily challenges and multiplayer rooms
      * reproduce an identical draw on every node. Respects {@code is_active} and
-     * {@code asset_ready}, and excludes locations already used in this game.
+     * {@code asset_ready}, and excludes locations already used in this game. When
+     * {@code panoramasOnly} is true, only panoramic rows are eligible.
      */
-    Optional<Location> sampleWithinCountry(String country, float minQuality, Set<UUID> exclude, long seed);
+    Optional<Location> sampleWithinCountry(String country, float minQuality, Set<UUID> exclude,
+                                           boolean panoramasOnly, long seed);
 
     /**
      * Insert or update a location from a probed source image. Idempotent on the

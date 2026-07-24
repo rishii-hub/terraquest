@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -15,6 +16,15 @@ public interface RoundRepository extends JpaRepository<Round, UUID> {
 
     @Query("select r from Round r where r.game.id = :gameId and r.roundIndex = :index")
     Optional<Round> findByGameAndIndex(@Param("gameId") UUID gameId, @Param("index") int index);
+
+    /**
+     * All rounds already materialised for a game. Rounds are created lazily in
+     * order (round n only after n-1 is answered), so this is exactly the set of
+     * prior rounds when building the next one -- their locations and countries
+     * feed the sampler's exclusion sets so a game never repeats either.
+     */
+    @Query("select r from Round r where r.game.id = :gameId")
+    List<Round> findByGameId(@Param("gameId") UUID gameId);
 
     @Query("""
             select case when count(r) > 0 then true else false end

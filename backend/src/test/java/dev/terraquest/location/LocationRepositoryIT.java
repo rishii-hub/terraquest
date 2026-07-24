@@ -117,12 +117,52 @@ class LocationRepositoryIT {
         em.flush();
 
         long seed = 12_345L;
-        UUID first = locations.sampleWithinCountry("DE", 0.4f, Set.of(), seed)
+        UUID first = locations.sampleWithinCountry("DE", 0.4f, Set.of(), false, seed)
                 .orElseThrow().getId();
-        UUID second = locations.sampleWithinCountry("DE", 0.4f, Set.of(), seed)
+        UUID second = locations.sampleWithinCountry("DE", 0.4f, Set.of(), false, seed)
                 .orElseThrow().getId();
 
         assertThat(second).isEqualTo(first);
+    }
+
+    @Test
+    void panoramas_only_filter_excludes_flat_locations_from_both_reads() {
+        insertCountry("SE", "SWE", "Sweden", "Europe");
+        // Three panoramic, two flat -- all otherwise playable.
+        for (int i = 0; i < 3; i++) {
+            em.persist(Location.builder()
+                    .mapillaryImageId("mly-se-pano-" + i)
+                    .position(Geo.toPoint(59.3 + i * 0.01, 18.0 + i * 0.01))
+                    .countryCode("SE").panoramic(true)
+                    .qualityScore(0.9f).active(true).assetReady(true)
+                    .build());
+        }
+        for (int i = 0; i < 2; i++) {
+            em.persist(Location.builder()
+                    .mapillaryImageId("mly-se-flat-" + i)
+                    .position(Geo.toPoint(59.4 + i * 0.01, 18.1 + i * 0.01))
+                    .countryCode("SE").panoramic(false)
+                    .qualityScore(0.9f).active(true).assetReady(true)
+                    .build());
+        }
+        em.flush();
+
+        assertThat(locations.countActiveByCountry(0.4f, false).get("SE"))
+                .as("the full pool counts all five locations")
+                .isEqualTo(5);
+        assertThat(locations.countActiveByCountry(0.4f, true).get("SE"))
+                .as("panoramas-only counts only the three panoramic locations")
+                .isEqualTo(3);
+
+        // Every panoramas-only draw must land on a panoramic row. Vary the seed
+        // so we exercise different orderings, not just one lucky hash.
+        for (long seed = 0; seed < 20; seed++) {
+            Location drawn = locations.sampleWithinCountry("SE", 0.4f, Set.of(), true, seed)
+                    .orElseThrow();
+            assertThat(drawn.isPanoramic())
+                    .as("panoramas-only draw returned a flat location for seed %d", seed)
+                    .isTrue();
+        }
     }
 
     @Test
@@ -157,6 +197,35 @@ class LocationRepositoryIT {
 
         assertThat(first).as("first guess is recorded").isEqualTo(1);
         assertThat(second).as("second guess is rejected by the guessed_at guard").isEqualTo(0);
+    }
+
+    @Test
+    void find_by_game_id_returns_prior_rounds_locations_for_exclusion() {
+        insertCountry("DE", "DEU", "Germany", "Europe");
+        insertCountry("SE", "SWE", "Sweden", "Europe");
+        AppUser user = em.persist(new AppUser("player-" + UUID.randomUUID(), null));
+
+        Location de = em.persist(Location.builder()
+                .mapillaryImageId("mly-excl-de").position(Geo.toPoint(52.5, 13.4))
+                .countryCode("DE").panoramic(true).qualityScore(0.9f).active(true).assetReady(true)
+                .build());
+        Location se = em.persist(Location.builder()
+                .mapillaryImageId("mly-excl-se").position(Geo.toPoint(59.3, 18.0))
+                .countryCode("SE").panoramic(true).qualityScore(0.9f).active(true).assetReady(true)
+                .build());
+        Game game = em.persist(Game.builder().userId(user.getId()).mode(GameMode.CLASSIC).roundCount(5).build());
+        em.persist(Round.builder().game(game).roundIndex((short) 0).location(de).build());
+        em.persist(Round.builder().game(game).roundIndex((short) 1).location(se).build());
+        em.flush();
+
+        // These are exactly the location ids and countries GameService feeds into
+        // the sampler's exclusion sets so a game never repeats a place.
+        assertThat(rounds.findByGameId(game.getId()))
+                .extracting(r -> r.getLocation().getId())
+                .containsExactlyInAnyOrder(de.getId(), se.getId());
+        assertThat(rounds.findByGameId(game.getId()))
+                .extracting(r -> r.getLocation().getCountryCode())
+                .containsExactlyInAnyOrder("DE", "SE");
     }
 
     private void insertCountry(String iso2, String iso3, String name, String continent) {
