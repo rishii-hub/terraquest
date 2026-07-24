@@ -66,5 +66,24 @@ class HarvestStatsControllerTest {
                     new CandidateStats(0, 0, 0, 0),
                     new AssetStats(0, 0, 0));
         }
+
+        // SecurityConfig's game chain needs a UserAccounts; the admin chain under test
+        // never touches it, so a never-called stub satisfies the context.
+        @Bean
+        dev.terraquest.identity.UserAccounts userAccounts() {
+            return new NoopUserAccounts();
+        }
+    }
+
+    static final class NoopUserAccounts implements dev.terraquest.identity.UserAccounts {
+        @Override
+        public dev.terraquest.identity.UserAccount createGuest() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public java.util.Optional<dev.terraquest.identity.UserAccount> findById(java.util.UUID id) {
+            return java.util.Optional.empty();
+        }
     }
 }
