@@ -1,0 +1,11 @@
+# Build output / TS incremental info
+dist/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local env overrides (root .gitignore also covers .env*)
+.env
+.env.*.local
