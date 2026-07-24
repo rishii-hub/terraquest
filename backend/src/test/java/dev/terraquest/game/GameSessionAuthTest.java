@@ -78,6 +78,18 @@ class GameSessionAuthTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void a_session_that_already_played_still_cannot_reach_admin() throws Exception {
+        // Reproduces the cross-chain scenario: the guest identity minted on the game
+        // chain must not bleed into the admin chain via the shared session -- an admin
+        // request without admin credentials must still be challenged (401), never
+        // treated as an authenticated-but-forbidden caller (403).
+        MockHttpSession session = new MockHttpSession();
+        mvc.perform(post("/api/v1/games").session(session)).andExpect(status().isCreated());
+        mvc.perform(get("/api/v1/admin/harvest-stats").session(session))
+                .andExpect(status().isUnauthorized());
+    }
+
     @TestConfiguration
     static class Stubs {
         @Bean
