@@ -56,10 +56,10 @@ Ordered so each phase produces something you can actually play.
 - [x] Admin harvest-stats endpoint
 - [ ] Target: 20k locations across 60+ countries
 
-### Phase 2 — Classic Mode, single player
+### Phase 2 — MVP Gameplay
 - [ ] `POST /games`, `POST /games/{id}/rounds/{n}/guess`
 - [ ] React + MapLibre guess map
-- [ ] MapillaryJS viewer with attribution overlay
+- [ ] Custom equirectangular viewer (three.js), attribution on result screen
 - [ ] Result screen with the true location and distance line
 
 ### Phase 3 — Accounts and persistence
