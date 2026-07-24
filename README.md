@@ -3,7 +3,8 @@
 A free, open-source geography game built on OpenStreetMap and Mapillary.
 No ads, no paywalls, no Google imagery.
 
-**Status:** pre-alpha. Location pipeline and scoring implemented; nothing playable yet.
+**Status:** pre-alpha. Location pipeline, scoring, and single-player Classic Mode
+implemented — playable locally end to end.
 
 ---
 
@@ -57,10 +58,10 @@ Ordered so each phase produces something you can actually play.
 - [ ] Target: 20k locations across 60+ countries
 
 ### Phase 2 — Classic Mode, single player
-- [ ] `POST /games`, `POST /games/{id}/rounds/{n}/guess`
-- [ ] React + MapLibre guess map
-- [ ] MapillaryJS viewer with attribution overlay
-- [ ] Result screen with the true location and distance line
+- [x] `POST /games`, `POST /games/{id}/rounds/{n}/guess`
+- [x] React + MapLibre guess map
+- [x] Viewer: three.js sphere for panoramas, fitted image for flat frames
+- [x] Result screen with the true location, distance line, and CC-BY-SA attribution
 
 ### Phase 3 — Accounts and persistence
 - [ ] OAuth (Google, GitHub) + JWT
@@ -101,6 +102,32 @@ docker compose up -d postgres redis
 export MAPILLARY_ACCESS_TOKEN=<token from mapillary.com/developer>
 ./mvnw spring-boot:run
 ```
+
+## Frontend — Classic Mode
+
+The playable game lives in `frontend/` (Vite + React + TypeScript, Tailwind,
+MapLibre GL for the guess map, three.js for the panorama viewer).
+
+```bash
+cd frontend
+npm install
+npm run dev          # serves http://localhost:5173
+```
+
+It expects the backend running on `:8080` with a seeded pool. The Vite dev server
+proxies `/api` to the backend (so the anonymous session cookie is first-party) and
+serves locally-stored imagery over http under `/__img` (see the note below).
+
+Config is optional, via `frontend/.env` (see `.env.example`): `VITE_MAP_STYLE`
+(basemap; default is keyless OpenFreeMap), `VITE_API_PROXY_TARGET` (backend origin),
+and `LOCAL_STORAGE_DIR` (only if you pointed the backend at a custom image
+directory). Other scripts: `npm run build`, `npm run lint`, `npm run test`.
+
+> **Dev-only imagery.** `LocalFilesystemStorageProvider` can store images but only
+> hands out `file://` URLs, which a browser cannot load, and the backend exposes no
+> HTTP image endpoint. The Vite middleware bridges this for local dev only. A
+> self-hosted deployment needs a backend image endpoint or R2 presigned URLs — a
+> follow-up, not part of the Classic Mode frontend.
 
 ## Seeding the pool
 
