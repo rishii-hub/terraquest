@@ -24,12 +24,13 @@ class InMemoryLocationRepository implements LocationRepository {
     final Map<UUID, Integer> ingestFailures = new HashMap<>();
 
     @Override
-    public Map<String, Integer> countActiveByCountry(float minQuality) {
+    public Map<String, Integer> countActiveByCountry(float minQuality, boolean panoramasOnly) {
         return Map.of();
     }
 
     @Override
-    public Optional<Location> sampleWithinCountry(String country, float minQuality, Set<UUID> exclude, long seed) {
+    public Optional<Location> sampleWithinCountry(String country, float minQuality, Set<UUID> exclude,
+                                                  boolean panoramasOnly, long seed) {
         return Optional.empty();
     }
 

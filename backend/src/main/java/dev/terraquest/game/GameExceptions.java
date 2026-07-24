@@ -56,3 +56,17 @@ class RoundAlreadyAnsweredException extends RuntimeException {
         super("Round " + roundIndex + " has already been answered");
     }
 }
+
+/**
+ * The pool could not produce a location for a round -- e.g. the panoramic pool
+ * cannot yield enough distinct locations for the game. Maps the sampler-seam
+ * {@code NoLocationsAvailableException} to a 503 so an exhausted pool reads as a
+ * clean "try again later", not a 500. Kept in the game module so the location
+ * package owns no web concern.
+ */
+@ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+class PoolExhaustedException extends RuntimeException {
+    PoolExhaustedException(Throwable cause) {
+        super("No imagery is currently available to build this round", cause);
+    }
+}

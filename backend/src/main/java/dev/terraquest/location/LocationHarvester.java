@@ -8,6 +8,7 @@ import dev.terraquest.imagery.ProviderException;
 import dev.terraquest.shared.GeoPoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -85,12 +86,22 @@ public class LocationHarvester {
     private final ImageAssetService assets;
     private final Clock clock;
 
+    /**
+     * When true, flat images are discarded at the filter stage -- before
+     * {@code resolveImageUrl}, download, EXIF-strip or storage -- so a run that
+     * grows the panorama pool spends nothing fetching the ~4-in-5 flat hits it
+     * would never serve. Probe cost is unchanged: Mapillary cannot be asked for
+     * panoramas only.
+     */
+    private final boolean panoramasOnly;
+
     public LocationHarvester(List<ImageryProvider> providers,
                              CandidatePointRepository candidates,
                              LocationRepository locations,
                              CountryResolver countries,
                              ImageAssetService assets,
-                             Clock clock) {
+                             Clock clock,
+                             @Value("${terraquest.harvest.panoramas-only:false}") boolean panoramasOnly) {
         if (providers.isEmpty()) {
             // Fail at startup, not at 3am when the first batch silently does nothing.
             throw new IllegalStateException("At least one ImageryProvider must be configured");
@@ -101,6 +112,11 @@ public class LocationHarvester {
         this.countries = countries;
         this.assets = assets;
         this.clock = clock;
+        this.panoramasOnly = panoramasOnly;
+        log.info("Harvest: {} mode active",
+                panoramasOnly
+                        ? "panoramas-only (flat images discarded before download)"
+                        : "all-imagery");
     }
 
     @Scheduled(fixedDelayString = "${terraquest.harvest.interval-ms:60000}")
@@ -249,6 +265,11 @@ public class LocationHarvester {
             return false;
         }
         if (img.capturedAt().isBefore(clock.instant().minus(MAX_AGE_DAYS, ChronoUnit.DAYS))) {
+            return false;
+        }
+        // Panoramas-only mode drops flat imagery here, at the filter stage, so
+        // nothing flat is resolved, downloaded, stripped or stored.
+        if (panoramasOnly && !img.panoramic()) {
             return false;
         }
         // Without a compass angle a flat image cannot be oriented sensibly.

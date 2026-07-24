@@ -36,16 +36,21 @@ public interface LocationSamplingStrategy {
      * @param excludeCountries already used in this game
      * @param restrictTo       optional country allow-list for regional modes
      * @param minQuality       floor on the harvester's quality heuristic
+     * @param panoramasOnly    restrict the draw to panoramic (equirectangular)
+     *                         locations; Classic Mode sets this so no round is a
+     *                         single fixed photograph. Off for other modes, which
+     *                         keep the full pool.
      */
     record SampleRequest(
             long seed,
             Set<UUID> excludeLocations,
             Set<String> excludeCountries,
             List<String> restrictTo,
-            float minQuality
+            float minQuality,
+            boolean panoramasOnly
     ) {
         public static SampleRequest world(long seed) {
-            return new SampleRequest(seed, Set.of(), Set.of(), List.of(), 0.4f);
+            return new SampleRequest(seed, Set.of(), Set.of(), List.of(), 0.4f, false);
         }
     }
 }
