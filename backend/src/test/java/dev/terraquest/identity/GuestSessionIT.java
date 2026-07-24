@@ -104,10 +104,11 @@ class GuestSessionIT {
         // The security property is that a guest session is denied admin access -- the
         // guest cookie confers nothing (an admin request with no cookie is denied
         // identically). The real servlet container denies with 403; the WebMvc slice
-        // returns 401 for the same case. Assert the denial, not the exact code, and
-        // that no admin data leaked.
+        // returns 401 for the same case. Assert the denial, not the exact code. A 4xx
+        // denial carries no stats body (getBody() is in fact null here), so the status
+        // is itself the proof nothing leaked.
         assertThat(admin.getStatusCode().is4xxClientError()).isTrue();
-        assertThat(admin.getBody()).doesNotContain("panoFloor");
+        assertThat(admin.getBody()).isNull();
     }
 
     private ResponseEntity<GameCreated> startGame(HttpHeaders headers) {
