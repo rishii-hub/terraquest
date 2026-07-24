@@ -56,6 +56,13 @@ terraquest:
     # scheduled unless a deployment opts in. Set HARVEST_ENABLED=true to run it.
     enabled: ${HARVEST_ENABLED:false}
 
+  imagery:
+    # Panoramas are ingested at full capture resolution, so a source download is
+    # now multi-megabyte rather than ~100 KB. This ceiling stops one pathological
+    # original from OOMing the harvester; over it, the image is skipped and
+    # counted as an ingest failure like any other unusable frame.
+    max-download-bytes: ${IMAGE_MAX_DOWNLOAD_BYTES:31457280}   # 30 MB
+
   r2:
     bucket: ${R2_BUCKET:terraquest-imagery}
     account-id: ${R2_ACCOUNT_ID:}

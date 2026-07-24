@@ -314,7 +314,13 @@ public class LocationHarvester {
 
         ImageryProvider provider = providerById(image.providerId());
 
-        Optional<String> url = provider.resolveImageUrl(image.externalId(), ImageSize.STANDARD);
+        // Panoramas wrap 360 degrees across their width, so they need the full
+        // capture to survive the 4096 storage cap with readable detail. A flat
+        // frame fills a normal viewport and is stored at 2048, so fetching the
+        // original would be bandwidth spent on pixels ingest throws away.
+        ImageSize size = image.panoramic() ? ImageSize.ORIGINAL : ImageSize.LARGE;
+
+        Optional<String> url = provider.resolveImageUrl(image.externalId(), size);
         if (url.isEmpty()) {
             return false;
         }

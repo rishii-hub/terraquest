@@ -23,7 +23,7 @@ class RecordingAssetService extends ImageAssetService {
     final List<UUID> ingested = new ArrayList<>();
 
     RecordingAssetService() {
-        super(new InMemoryStorageProvider(), null);
+        super(new InMemoryStorageProvider(), null, 30L * 1024 * 1024);
     }
 
     @Override
@@ -33,8 +33,8 @@ class RecordingAssetService extends ImageAssetService {
                 .locationId(locationId)
                 .storageKey("test/" + locationId)
                 .projection(panoramic ? Projection.EQUIRECTANGULAR : Projection.FLAT)
-                .width(2048)
-                .height(1024)
+                .width(panoramic ? 4096 : 2048)
+                .height(panoramic ? 2048 : 1365)
                 .bytes(1_024L)
                 .exifStripped(true)
                 .build());

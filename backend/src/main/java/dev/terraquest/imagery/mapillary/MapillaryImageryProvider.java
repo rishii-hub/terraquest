@@ -86,6 +86,7 @@ public class MapillaryImageryProvider implements ImageryProvider {
         String field = switch (size) {
             case THUMBNAIL -> "thumb_256_url";
             case STANDARD  -> "thumb_1024_url";
+            case LARGE     -> "thumb_2048_url";
             case ORIGINAL  -> "thumb_original_url";
         };
         return client.fetchField(externalId, field);
