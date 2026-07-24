@@ -106,7 +106,23 @@ public interface ImageryProvider {
             String contributorId
     ) {}
 
-    enum ImageSize { THUMBNAIL, STANDARD, ORIGINAL }
+    /**
+     * Requested source resolution. Widths are approximate and provider-dependent;
+     * they are documented here so a call site can choose a rung without reading
+     * the adapter. Ingest downscales from whatever arrives, so asking for more
+     * than the storage cap is safe -- asking for less is not, because nothing
+     * downstream can invent detail the source never carried.
+     */
+    enum ImageSize {
+        /** ~256px wide. */
+        THUMBNAIL,
+        /** ~1024px wide. */
+        STANDARD,
+        /** ~2048px wide; the rung flat frames are stored at. */
+        LARGE,
+        /** Full capture resolution; panoramas need this to reach 4096. */
+        ORIGINAL
+    }
 
     /**
      * @param licence   SPDX-style identifier, e.g. "CC-BY-SA-4.0"
